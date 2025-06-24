@@ -24,13 +24,13 @@ class MzNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
 
     def __init__(self,
                  car_params=None,
-                 control_mode="min",
+                 control_mode="max",
                  disturbance_mode="max",
                  control_space=None,
                  disturbance_space=None):
 
         if car_params is None:
-            self.car_params = {'m': 1430, 'Vx': 60, 'Lf': 1.05, 'Lr': 1.61, 'Iz': 2059.2, 'mu': 1.0, 'Mz': 10e3 * 0.7,
+            self.car_params = {'m': 1430, 'Vx': 30, 'Lf': 1.05, 'Lr': 1.61, 'Iz': 2059.2, 'mu': 1.0, 'Mz': 10e3 * 0.0,
                                'Cf': 9 * 10e3, 'Cr': 10 * 10e3}
 
         else:
