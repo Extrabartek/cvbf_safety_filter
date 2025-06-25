@@ -24,7 +24,7 @@ class MzNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
 
     def __init__(self,
                  car_params=None,
-                 control_mode="max",
+                 control_mode="min",
                  disturbance_mode="max",
                  control_space=None,
                  disturbance_space=None):
