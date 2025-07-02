@@ -46,7 +46,7 @@ class CBVFInterpolator:
                              f"but times array has length {len(times)}")
 
         # Precompute spatial gradients at all time steps for efficiency
-        self._precompute_all_gradients()
+        # self._precompute_all_gradients()
 
     def _precompute_all_gradients(self):
         """Precompute spatial gradients at all grid points and times."""

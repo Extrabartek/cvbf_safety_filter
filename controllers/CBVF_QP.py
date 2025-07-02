@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import numpy as np
 import qpsolvers
 
-from CBVFInterpolator import CBVFInterpolator
+from .CBVFInterpolator import CBVFInterpolator
 
 
 
