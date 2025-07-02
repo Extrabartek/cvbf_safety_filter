@@ -2,6 +2,8 @@ import jax.numpy as jnp
 import numpy as np
 import qpsolvers
 
+from CBVFInterpolator import CBVFInterpolator
+
 
 
 class CBVFQPController:
@@ -18,6 +20,7 @@ class CBVFQPController:
     """
 
     def __init__(self,
+                 value_fn: CBVFInterpolator,
                  gamma: float,
                  solver: str = 'osqp',
                  verbose: bool = False):
@@ -25,10 +28,12 @@ class CBVFQPController:
         Initialize CBVF-QP Controller
 
         Args:
+            cbvf: control barrier value function
             gamma: CBVF relaxation parameter (γ ≥ 0)
             solver: QP solver to use ('osqp', 'quadprog', 'cvxopt', etc.)
             verbose: Whether to print solver information
         """
+        self.cbvf = value_fn
         self.gamma = gamma
         self.solver = solver
         self.verbose = verbose
@@ -37,9 +42,6 @@ class CBVFQPController:
                              state: jnp.ndarray,
                              time: float,
                              u_ref: jnp.ndarray,
-                             cbvf_value: float,
-                             cbvf_grad_x: jnp.ndarray,
-                             cbvf_grad_t: float,
                              dynamics) -> jnp.ndarray:
         """
         Compute safe control using CBVF-QP formulation
@@ -56,6 +58,8 @@ class CBVFQPController:
         Returns:
             Safe control input u_safe (jnp.ndarray)
         """
+
+        cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradients(state, time)
 
         # Get system matrices using existing dynamics interface
         p_x = dynamics.open_loop_dynamics(state, time)
