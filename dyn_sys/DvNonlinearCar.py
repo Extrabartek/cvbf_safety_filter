@@ -1,4 +1,4 @@
-import hj_reachability as hj
+import cbvf_reachability as hj
 import jax.numpy as jnp
 from tire_models.pacejka_magic_formula import pacejka_lateral_force
 
