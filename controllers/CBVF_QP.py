@@ -81,7 +81,7 @@ def find_safe_entry_time_efficient(cbvf_interpolator, state, safe_threshold=0.0)
     """
     More efficient version using binary search if times are sorted.
     """
-    times = cbvf_interpolator.times
+    times = -cbvf_interpolator.times
 
     # Binary search for the first safe time
     left, right = 0, times.shape[0] - 1
