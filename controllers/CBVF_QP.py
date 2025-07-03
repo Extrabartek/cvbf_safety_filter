@@ -27,7 +27,7 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
             b_qp = None
             meq = 0
 
-        if verbose:
+        if False:
             print(f"=== Direct Quadprog Call ===")
             print(f"G_qp (P) shape: {G_qp.shape}, condition: {np.linalg.cond(G_qp):.2e}")
             print(f"a_qp (-q): {a_qp}")
@@ -43,7 +43,7 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
             # Unconstrained case
             result = quadprog.solve_qp(G_qp, a_qp)
 
-        if verbose:
+        if False:
             print(f"Quadprog raw result: {result}")
             print(f"Result type: {type(result)}")
             if len(result) >= 2:
@@ -77,6 +77,29 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
                 print(f"DIAGNOSIS: Unknown quadprog error - {e}")
         return None
 
+def find_safe_entry_time_efficient(cbvf_interpolator, state, safe_threshold=0.0):
+    """
+    More efficient version using binary search if times are sorted.
+    """
+    times = cbvf_interpolator.times
+
+    # Binary search for the first safe time
+    left, right = 0, times.shape[0] - 1
+    safe_entry_time = None
+
+    while left <= right:
+        mid = (left + right) // 2
+        cbvf_value = cbvf_interpolator.interpolate_value(state, times[mid])
+
+        if cbvf_value >= safe_threshold:
+            safe_entry_time = float(mid)
+            right = mid - 1  # Look for earlier safe time
+        else:
+            left = mid + 1  # Need later time to be safe
+
+    # Return the safe entry time or latest time if never safe
+    return safe_entry_time if safe_entry_time is not None else float(times[-1])
+
 
 # Simple enhanced version of your existing controller
 class CBVFQPController:
@@ -85,10 +108,15 @@ class CBVFQPController:
         self.gamma = gamma
         self.solver = solver
         self.verbose = verbose
+        self.safe_threshold = 0.0  # Safe set threshold
 
     def compute_safe_control(self, state, time, u_ref, dynamics):
         try:
-            cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradients(state, time)
+            gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold)
+            if self.verbose:
+                print(f"Current state: {state}, time: {time}, reference control: {u_ref}")
+                print(f"Gradient time for safe entry: {gradient_time}")
+            cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradients(state, gradient_time)
 
             # Get system matrices
             p_x = dynamics.open_loop_dynamics(state, time)
@@ -151,7 +179,7 @@ class CBVFQPController:
                 G = constraint_coeff
                 h = constraint_bound
 
-            if self.verbose:
+            if False:
                 print(f"QP Setup - P: {P.shape}, q: {q.shape}, G: {G.shape}, h: {h.shape}")
                 print(f"P condition number: {np.linalg.cond(P):.2e}")
                 print(f"Constraint matrix G:\n{G}")
