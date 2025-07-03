@@ -77,28 +77,85 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
                 print(f"DIAGNOSIS: Unknown quadprog error - {e}")
         return None
 
-def find_safe_entry_time_efficient(cbvf_interpolator, state, safe_threshold=0.0):
+
+def find_safe_entry_time_efficient(cbvf_interpolator, state, safe_threshold=0.0, debug=False):
     """
-    More efficient version using binary search if times are sorted.
+    Find the optimal time for gradient computation in CBVF-QP controller.
+
+    For backward reachability with negative times:
+    - If state is safe at some point, returns the time of entry into safe set
+    - If state is never safe, returns the time with maximum CBVF value (least unsafe)
+
+    This ensures we get meaningful gradients even for states outside the safe set.
     """
-    times = -cbvf_interpolator.times
+    times = cbvf_interpolator.times
 
-    # Binary search for the first safe time
-    left, right = 0, times.shape[0] - 1
-    safe_entry_time = None
+    if len(times) < 2:
+        return times[0]
 
-    while left <= right:
-        mid = (left + right) // 2
-        cbvf_value = cbvf_interpolator.interpolate_value(state, times[mid])
+    # Determine time ordering
+    ascending = times[1] > times[0]
 
-        if cbvf_value >= safe_threshold:
-            safe_entry_time = float(mid)
-            right = mid - 1  # Look for earlier safe time
+    # For ascending times: [-0.5, -0.375, -0.25, -0.125, 0]
+    if ascending:
+        earliest_idx = 0
+        latest_idx = len(times) - 1
+    else:
+        # For descending times: [0, -0.125, -0.25, -0.375, -0.5]
+        earliest_idx = len(times) - 1
+        latest_idx = 0
+
+    # Evaluate CBVF at all times to understand the profile
+    values = []
+    safe_times = []
+    max_value = float('-inf')
+    max_value_time = times[0]
+
+    # Sample times more densely for better accuracy
+    sample_indices = list(range(len(times)))
+
+    for idx in sample_indices:
+        t = times[idx]
+        v = cbvf_interpolator.interpolate_value(state, t)
+        values.append((t, v))
+
+        # Track maximum value and its time
+        if v > max_value:
+            max_value = v
+            max_value_time = t
+
+        # Track safe times
+        if v >= safe_threshold:
+            safe_times.append((t, v))
+
+    if debug:
+        print(f"CBVF profile for state {state}:")
+        print(f"  Safe threshold: {safe_threshold}")
+        print(f"  Max value: {max_value} at time {max_value_time}")
+        if len(values) <= 10:
+            for t, v in values:
+                print(f"  Time {t:6.3f}: value = {v:8.5f} {'(safe)' if v >= safe_threshold else ''}")
+
+    # If there are safe times, find the entry point
+    if safe_times:
+        if ascending:
+            # Find the earliest safe time (most negative)
+            entry_time = min(safe_times, key=lambda x: x[0])[0]
         else:
-            left = mid + 1  # Need later time to be safe
+            # Find the earliest safe time (in descending array)
+            entry_time = max(safe_times, key=lambda x: x[0])[0]
 
-    # Return the safe entry time or latest time if never safe
-    return safe_entry_time if safe_entry_time is not None else float(times[-1])
+        if debug:
+            print(f"  Entry time: {entry_time}")
+
+        return entry_time
+
+    # If never safe, return time with maximum CBVF value
+    # This gives us the most meaningful gradient for control
+    if debug:
+        print(f"  Never safe, using max value time: {max_value_time}")
+
+    return max_value_time
 
 
 # Simple enhanced version of your existing controller
@@ -112,7 +169,7 @@ class CBVFQPController:
 
     def compute_safe_control(self, state, time, u_ref, dynamics):
         try:
-            gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold)
+            gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold, debug=True)
             if self.verbose:
                 print(f"Current state: {state}, time: {time}, reference control: {u_ref}")
                 print(f"Gradient time for safe entry: {gradient_time}")

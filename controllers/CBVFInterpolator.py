@@ -25,7 +25,7 @@ def _interpolate_time_index_jit(times: jnp.ndarray, time: float) -> Tuple[int, f
 
 
 @jax.jit
-def _interpolate_value_jit(grid_states: jnp.ndarray, grid_spacings: jnp.ndarray,
+def _interpolate_value_jit(grid_spacings: jnp.ndarray,
                            grid_lo: jnp.ndarray, grid_shape: jnp.ndarray,
                            cbvf_values: jnp.ndarray, times: jnp.ndarray,
                            state: jnp.ndarray, time: float) -> float:
