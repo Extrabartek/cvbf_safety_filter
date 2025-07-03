@@ -10,18 +10,40 @@ from cbvf_reachability.finite_differences import upwind_first
 @jax.jit
 def _interpolate_time_index_jit(times: jnp.ndarray, time: float) -> Tuple[int, float]:
     """Find time indices and interpolation weight for given time."""
-    # Handle boundary cases
-    time = jnp.clip(time, times[0], times[-1])
+    # Determine if times are increasing or decreasing
+    is_increasing = times[1] > times[0]
 
-    # Binary search for time interval
-    idx = jnp.searchsorted(times, time, side='right') - 1
-    idx = jnp.clip(idx, 0, len(times) - 2)
+    def handle_increasing():
+        # Handle increasing time array
+        clipped_time = jnp.clip(time, times[0], times[-1])
+        idx = jnp.searchsorted(times, clipped_time, side='right') - 1
+        idx = jnp.clip(idx, 0, len(times) - 2)
 
-    # Compute interpolation weight
-    dt = times[idx + 1] - times[idx]
-    weight = jnp.where(dt > 0, (time - times[idx]) / dt, 0.0)
+        # Compute interpolation weight
+        dt = times[idx + 1] - times[idx]
+        weight = jnp.where(dt > 0, (clipped_time - times[idx]) / dt, 0.0)
+        return idx, weight
 
-    return idx, weight
+    def handle_decreasing():
+        # Handle decreasing time array (common in backward reachability)
+        clipped_time = jnp.clip(time, times[-1], times[0])  # Note: times[-1] < times[0]
+
+        # For decreasing array, we need to search differently
+        # Flip the array to use searchsorted, then adjust the index
+        times_flipped = times[::-1]
+        idx_flipped = jnp.searchsorted(times_flipped, clipped_time, side='right') - 1
+        idx_flipped = jnp.clip(idx_flipped, 0, len(times_flipped) - 2)
+
+        # Convert back to original array index
+        idx = len(times) - 2 - idx_flipped
+        idx = jnp.clip(idx, 0, len(times) - 2)
+
+        # Compute interpolation weight
+        dt = times[idx + 1] - times[idx]  # This will be negative for decreasing array
+        weight = jnp.where(dt != 0, (clipped_time - times[idx]) / dt, 0.0)
+        return idx, weight
+
+    return jax.lax.cond(is_increasing, handle_increasing, handle_decreasing)
 
 
 @jax.jit
@@ -100,10 +122,10 @@ def _compute_spatial_gradient_jit(grid_spacings: jnp.ndarray, grid_lo: jnp.ndarr
         state_plus = state.at[i].add(eps)
         state_minus = state.at[i].add(-eps)
 
-        value_plus = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                            grid_shape, cbvf_values, times, state_plus, time)
-        value_minus = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                             grid_shape, cbvf_values, times, state_minus, time)
+        value_plus = _interpolate_value_jit(grid_spacings, grid_lo, grid_shape,
+                                            cbvf_values, times, state_plus, time)
+        value_minus = _interpolate_value_jit(grid_spacings, grid_lo, grid_shape,
+                                             cbvf_values, times, state_minus, time)
 
         grad = grad.at[i].set((value_plus - value_minus) / (2 * eps))
 
@@ -117,36 +139,27 @@ def _compute_time_gradient_jit(grid_spacings: jnp.ndarray, grid_lo: jnp.ndarray,
                                time: float, dt: float = 1e-4) -> float:
     """JIT-compiled time gradient computation."""
     # Check bounds
-    t_min, t_max = times[0], times[-1]
+    t_min, t_max = jnp.min(times), jnp.max(times)
 
-    # Choose finite difference scheme based on position
-    def central_diff():
-        value_plus = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                            grid_shape, cbvf_values, times, state, time + dt)
-        value_minus = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                             grid_shape, cbvf_values, times, state, time - dt)
-        return (value_plus - value_minus) / (2 * dt)
+    # Compute all possible finite difference values
+    value_plus = _interpolate_value_jit(grid_spacings, grid_lo, grid_shape,
+                                        cbvf_values, times, state, time + dt)
+    value_minus = _interpolate_value_jit(grid_spacings, grid_lo, grid_shape,
+                                         cbvf_values, times, state, time - dt)
+    value_current = _interpolate_value_jit(grid_spacings, grid_lo, grid_shape,
+                                           cbvf_values, times, state, time)
 
-    def forward_diff():
-        value_plus = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                            grid_shape, cbvf_values, times, state, time + dt)
-        value_current = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                               grid_shape, cbvf_values, times, state, time)
-        return (value_plus - value_current) / dt
+    # Compute all possible gradients
+    central_grad = (value_plus - value_minus) / (2 * dt)
+    forward_grad = (value_plus - value_current) / dt
+    backward_grad = (value_current - value_minus) / dt
 
-    def backward_diff():
-        value_current = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                               grid_shape, cbvf_values, times, state, time)
-        value_minus = _interpolate_value_jit(grid_spacings, grid_spacings, grid_lo,
-                                             grid_shape, cbvf_values, times, state, time - dt)
-        return (value_current - value_minus) / dt
-
-    # Use central difference when possible
+    # Choose which gradient to use based on bounds
     use_central = (time - dt >= t_min) & (time + dt <= t_max)
     use_forward = (time - dt < t_min) & (time + dt <= t_max)
 
-    return jnp.where(use_central, central_diff(),
-                     jnp.where(use_forward, forward_diff(), backward_diff()))
+    return jnp.where(use_central, central_grad,
+                     jnp.where(use_forward, forward_grad, backward_grad))
 
 
 class CBVFInterpolator:
@@ -198,8 +211,9 @@ class CBVFInterpolator:
         Returns:
             Interpolated CBVF value B_γ(x,t)
         """
-        return _interpolate_value_jit(self.grid.states, self.grid_spacings, self.grid_lo,
-                                      self.grid_shape, self.cbvf_values, self.times, state, time)
+        # Fixed argument order!
+        return _interpolate_value_jit(self.grid_spacings, self.grid_lo, self.grid_shape,
+                                      self.cbvf_values, self.times, state, time)
 
     def interpolate_spatial_gradient(self, state: jnp.ndarray, time: float,
                                      use_upwind: bool = False,
@@ -256,7 +270,7 @@ class CBVFInterpolator:
 
     def get_time_bounds(self) -> Tuple[float, float]:
         """Get the time range for which CBVF data is available."""
-        return float(self.times[0]), float(self.times[-1])
+        return float(jnp.min(self.times)), float(jnp.max(self.times))
 
     def get_spatial_bounds(self) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """Get the spatial domain bounds."""
