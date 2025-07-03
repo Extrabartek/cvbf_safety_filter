@@ -21,7 +21,7 @@ class CBVFQPController:
     def __init__(self,
                  value_fn: CBVFInterpolator,
                  gamma: float,
-                 solver: str = 'osqp',
+                 solver: str = 'quadprog',
                  verbose: bool = False):
         """
         Initialize CBVF-QP Controller
@@ -120,7 +120,7 @@ class CBVFQPController:
 
                     # Add inequality constraints: u_min <= u <= u_max
                     G_bounds = np.vstack([-np.eye(n_controls), np.eye(n_controls)])
-                    h_bounds = np.hstack([-u_min, u_max])
+                    h_bounds = np.hstack([u_min, u_max])
 
                     # Combine with safety constraint
                     G = np.vstack([constraint_coeff, G_bounds])
