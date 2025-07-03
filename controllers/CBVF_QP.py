@@ -80,7 +80,7 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
 
 def find_safe_entry_time_efficient(cbvf_interpolator, state, safe_threshold=0.0, debug=False):
     """
-    Find the optimal time for gradient computation in CBVF-QP controller.
+    Find the optimal time for gradient computation in CBVF-QP controller using binary search.
 
     For backward reachability with negative times:
     - If state is safe at some point, returns the time of entry into safe set
@@ -96,67 +96,81 @@ def find_safe_entry_time_efficient(cbvf_interpolator, state, safe_threshold=0.0,
     # Determine time ordering
     ascending = times[1] > times[0]
 
-    # For ascending times: [-0.5, -0.375, -0.25, -0.125, 0]
-    if ascending:
-        earliest_idx = 0
-        latest_idx = len(times) - 1
-    else:
-        # For descending times: [0, -0.125, -0.25, -0.375, -0.5]
-        earliest_idx = len(times) - 1
-        latest_idx = 0
+    def is_safe(time_idx):
+        """Check if state is safe at given time index."""
+        t = times[time_idx]
+        v = cbvf_interpolator.interpolate_value(state, t)
+        return v >= safe_threshold
 
-    # Evaluate CBVF at all times to understand the profile
-    values = []
-    safe_times = []
+    # Binary search for safe entry time
+    def binary_search_safe_entry():
+        """Binary search for the earliest safe time."""
+        if ascending:
+            # For ascending times: search from earliest (most negative) to latest
+            left, right = 0, len(times) - 1
+
+            # Check if any point is safe
+            if not is_safe(right):  # Latest time not safe
+                return None
+
+            # Binary search for first safe time
+            while left < right:
+                mid = (left + right) // 2
+                if is_safe(mid):
+                    right = mid
+                else:
+                    left = mid + 1
+            return left
+        else:
+            # For descending times: search from latest (most negative) to earliest
+            left, right = 0, len(times) - 1
+
+            # Check if any point is safe
+            if not is_safe(left):  # Latest time not safe
+                return None
+
+            # Binary search for first safe time in descending order
+            while left < right:
+                mid = (left + right + 1) // 2
+                if is_safe(mid):
+                    left = mid
+                else:
+                    right = mid - 1
+            return left
+
+    # Try to find safe entry time with binary search
+    safe_idx = binary_search_safe_entry()
+
+    if safe_idx is not None:
+        entry_time = times[safe_idx]
+        if debug:
+            entry_value = cbvf_interpolator.interpolate_value(state, entry_time)
+            print(f"CBVF profile for state {state}:")
+            print(f"  Safe threshold: {safe_threshold}")
+            print(f"  Entry time: {entry_time} (value: {entry_value:.5f})")
+        return entry_time
+
+    # If never safe, find time with maximum value using sampling
+    # Sample fewer points for efficiency while maintaining accuracy
+    sample_size = min(20, len(times))  # Sample at most 20 points
+    sample_indices = [i * (len(times) - 1) // (sample_size - 1) for i in range(sample_size)]
+
     max_value = float('-inf')
     max_value_time = times[0]
-
-    # Sample times more densely for better accuracy
-    sample_indices = list(range(len(times)))
 
     for idx in sample_indices:
         t = times[idx]
         v = cbvf_interpolator.interpolate_value(state, t)
-        values.append((t, v))
-
-        # Track maximum value and its time
         if v > max_value:
             max_value = v
             max_value_time = t
 
-        # Track safe times
-        if v >= safe_threshold:
-            safe_times.append((t, v))
-
     if debug:
         print(f"CBVF profile for state {state}:")
         print(f"  Safe threshold: {safe_threshold}")
-        print(f"  Max value: {max_value} at time {max_value_time}")
-        if len(values) <= 10:
-            for t, v in values:
-                print(f"  Time {t:6.3f}: value = {v:8.5f} {'(safe)' if v >= safe_threshold else ''}")
-
-    # If there are safe times, find the entry point
-    if safe_times:
-        if ascending:
-            # Find the earliest safe time (most negative)
-            entry_time = min(safe_times, key=lambda x: x[0])[0]
-        else:
-            # Find the earliest safe time (in descending array)
-            entry_time = max(safe_times, key=lambda x: x[0])[0]
-
-        if debug:
-            print(f"  Entry time: {entry_time}")
-
-        return entry_time
-
-    # If never safe, return time with maximum CBVF value
-    # This gives us the most meaningful gradient for control
-    if debug:
-        print(f"  Never safe, using max value time: {max_value_time}")
+        print(f"  Never safe, using max value time: {max_value_time} (value: {max_value:.5f})")
 
     return max_value_time
-
 
 # Simple enhanced version of your existing controller
 class CBVFQPController:
@@ -167,9 +181,9 @@ class CBVFQPController:
         self.verbose = verbose
         self.safe_threshold = 0.0  # Safe set threshold
 
-    def compute_safe_control(self, state, time, u_ref, dynamics):
+    def compute_safe_control(self, state, time, u_ref, dynamics, u_max_mag=None):
         try:
-            gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold, debug=True)
+            gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold, debug=False)
             if self.verbose:
                 print(f"Current state: {state}, time: {time}, reference control: {u_ref}")
                 print(f"Gradient time for safe entry: {gradient_time}")
@@ -218,11 +232,15 @@ class CBVFQPController:
             constraint_bound = np.array([a_term + self.gamma * float(cbvf_value)])
 
             # Add control bounds
-            if hasattr(dynamics, 'control_space'):
+            if u_max_mag is not None:
+                G_bounds = np.vstack([-np.eye(n_controls), np.eye(n_controls)])
+                G = np.vstack([constraint_coeff, G_bounds])
+                h = np.hstack([constraint_bound, np.hstack([u_max_mag, u_max_mag])])
+            elif hasattr(dynamics, 'control_space'):
                 control_bounds = dynamics.control_space
                 if hasattr(control_bounds, 'lo') and hasattr(control_bounds, 'hi'):
-                    u_min = np.array(control_bounds.lo) * 3
-                    u_max = np.array(control_bounds.hi) * 3
+                    u_min = np.array(control_bounds.lo)
+                    u_max = np.array(control_bounds.hi)
 
                     G_bounds = np.vstack([-np.eye(n_controls), np.eye(n_controls)])
                     h_bounds = np.hstack([-u_min, u_max])

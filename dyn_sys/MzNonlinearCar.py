@@ -55,7 +55,7 @@ class MzNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
         x1 - yaw rate, x2 - sideslip angle
 
         x1_dot = 1/Iz * (Lf*Ff - LR*Fr + u)
-        x2_dot = arctan((Ff+Fr)/(m*Vx) - x1)
+        x2_dot = arctan((Ff+Fr)/(m*Vx)) - x1
         """
 
         x1, x2 = state
