@@ -21,7 +21,7 @@ def yaw_sideslip_to_xy(yaw_rate, side_slip, time_array, car_params=None):
     if car_params is None:
         Vx = 30.0  # Default from your MzNonlinearCar
     else:
-        Vx = car_params.get('Vx', 30.0)
+        Vx = car_params.get('Vx', 30.0)  # Use provided Vx or default to 30 m/s
 
     # Convert to numpy for easier manipulation
     yaw_rate = np.array(yaw_rate)
@@ -89,7 +89,7 @@ def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None
     frames = []
     n_points = len(x)
 
-    for i in range(0, n_points, max(1, n_points // 100)):  # Limit to ~100 frames for performance
+    for i in range(0, n_points):  # Limit to ~100 frames for performance
 
         # Current trajectory up to point i
         x_current = x[:i + 1] if i > 0 else x[:1]
@@ -102,15 +102,15 @@ def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None
             # XY plot - full trajectory (gray)
             go.Scatter(x=x, y=y, mode='lines',
                        line=dict(color='lightgray', width=1),
-                       name='Full Path', showlegend=False),
+                       name='Full Path', showlegend=False, xaxis='x1', yaxis='y1'),
             # XY plot - current trajectory (blue)
             go.Scatter(x=x_current, y=y_current, mode='lines',
                        line=dict(color='blue', width=3),
-                       name='Current Path', showlegend=False),
+                       name='Current Path', showlegend=False, xaxis='x1', yaxis='y1'),
             # XY plot - current position (red dot)
             go.Scatter(x=[x[i]], y=[y[i]], mode='markers',
                        marker=dict(color='red', size=10),
-                       name='Vehicle', showlegend=False),
+                       name='Vehicle', showlegend=False, xaxis='x1', yaxis='y1'),
 
             # Yaw-Slip plot - full trajectory (gray)
             go.Scatter(x=yaw_rate, y=side_slip, mode='lines',
@@ -176,10 +176,11 @@ def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None
             "steps": [{"args": [[f"frame_{k}"], {"frame": {"duration": 50, "redraw": True},
                                                  "mode": "immediate", "transition": {"duration": 50}}],
                        "label": str(k), "method": "animate"}
-                      for k in range(0, len(frames), max(1, len(frames) // 20))]
+                      for k in range(0, n_points)]
         }],
-        frames=frames
     )
+
+    fig.update(frames=frames)
 
     # Axis labels
     fig.update_xaxes(title_text="X Position [m]", row=1, col=1)
