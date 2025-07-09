@@ -61,7 +61,7 @@ def yaw_sideslip_to_xy(yaw_rate, side_slip, time_array, car_params=None):
 
 
 def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None,
-                                title="Vehicle Trajectory Animation"):
+                                title="Vehicle Trajectory Animation", grid_limits=None):
     """
     Create interactive trajectory animation with dual plots.
 
@@ -71,12 +71,21 @@ def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None
         time_array: array of time points
         car_params: vehicle parameters dict
         title: plot title
+        grid_limits: dict with 'yaw_rate' and 'side_slip' limits for phase plot
 
     Returns:
         Plotly figure with animation
     """
     # Convert to position coordinates
     x, y, heading = yaw_sideslip_to_xy(yaw_rate, side_slip, time_array, car_params)
+
+    # Set default grid limits if not provided
+    if grid_limits is None:
+        # Default limits based on your grid setup (180 deg = π rad, 35 deg ≈ 0.61 rad)
+        grid_limits = {
+            'yaw_rate': [-np.pi, np.pi],  # ±180 degrees in rad/s
+            'side_slip': [-35 * np.pi / 180, 35 * np.pi / 180]  # ±35 degrees in rad
+        }
 
     # Create subplots
     fig = sp.make_subplots(
@@ -132,18 +141,7 @@ def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None
             layout=dict(title=f"{title}<br>Time: {time_array[i]:.2f}s")
         ))
 
-    # Initial frame
-    fig.add_trace(go.Scatter(x=x[:1], y=y[:1], mode='lines+markers',
-                             line=dict(color='blue', width=3),
-                             marker=dict(color='red', size=10),
-                             name='Vehicle'), row=1, col=1)
-
-    fig.add_trace(go.Scatter(x=yaw_rate[:1], y=side_slip[:1], mode='lines+markers',
-                             line=dict(color='blue', width=3),
-                             marker=dict(color='red', size=10),
-                             name='State'), row=1, col=2)
-
-    # Add full trajectory as background
+    # Add full trajectory as background FIRST (so it appears behind the blue line)
     fig.add_trace(go.Scatter(x=x, y=y, mode='lines',
                              line=dict(color='lightgray', width=1),
                              name='Full Path', showlegend=False), row=1, col=1)
@@ -151,6 +149,18 @@ def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None
     fig.add_trace(go.Scatter(x=yaw_rate, y=side_slip, mode='lines',
                              line=dict(color='lightgray', width=1),
                              name='Full Path', showlegend=False), row=1, col=2)
+
+    # Initial frame - start with at least 2 points to show a line
+    initial_points = min(2, len(x))
+    fig.add_trace(go.Scatter(x=x[:initial_points], y=y[:initial_points], mode='lines+markers',
+                             line=dict(color='blue', width=3),
+                             marker=dict(color='red', size=10),
+                             name='Vehicle'), row=1, col=1)
+
+    fig.add_trace(go.Scatter(x=yaw_rate[:initial_points], y=side_slip[:initial_points], mode='lines+markers',
+                             line=dict(color='blue', width=3),
+                             marker=dict(color='red', size=10),
+                             name='State'), row=1, col=2)
 
     # Update layout with animation controls
     fig.update_layout(
@@ -190,6 +200,10 @@ def create_trajectory_animation(yaw_rate, side_slip, time_array, car_params=None
 
     # Equal aspect ratio for position plot
     fig.update_yaxes(scaleanchor="x", scaleratio=1, row=1, col=1)
+
+    # SET GRID LIMITS FOR PHASE PLOT (second subplot)
+    fig.update_xaxes(range=grid_limits['yaw_rate'], row=1, col=2)
+    fig.update_yaxes(range=grid_limits['side_slip'], row=1, col=2)
 
     return fig
 
