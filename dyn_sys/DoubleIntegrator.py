@@ -1,0 +1,40 @@
+import cbvf_reachability as hj
+import jax.numpy as jnp
+
+class DoubleIntegrator(hj.ControlAndDisturbanceAffineDynamics):
+
+    def __init__(self,
+                 control_mode="min",
+                 disturbance_mode="max",
+                 control_space=None,
+                 disturbance_space=None):
+
+        if control_space is None:
+            control_space = hj.sets.Box(jnp.array([-0.5]),
+                                        jnp.array([0.5]))
+        if disturbance_space is None:
+            disturbance_space = hj.sets.Box(jnp.array([-0.2]),
+                                        jnp.array([0.2]))
+        super().__init__(control_mode, disturbance_mode, control_space, disturbance_space)
+
+    def open_loop_dynamics(self, state, time):
+        """
+        Dynamics:
+
+        x1 - yaw rate, x2 - sideslip angle
+
+        x1_dot = 1/Iz * (Lf*Ff - LR*Fr + u)
+        x2_dot = arctan((Ff+Fr)/(m*Vx)) - x1
+        """
+
+        x1, x2 = state
+
+        return jnp.array([x1, 0])
+
+    def control_jacobian(self, state, time):
+        return jnp.array([[0],
+                          [1]])
+
+    def disturbance_jacobian(self, state, time):
+        return jnp.array([[1],
+                          [0]])

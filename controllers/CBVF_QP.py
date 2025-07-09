@@ -227,7 +227,7 @@ class CBVFQPController:
         q = np.array(-2.0 * u_ref_np)
 
         # Safety constraint
-        constraint_coeff = -np.dot(cbvf_grad_x_np, q_x_np).reshape(1, -1)
+        constraint_coeff = -np.dot(cbvf_grad_x_np, q_x_np)
         constraint_bound = np.array([a_term + self.gamma * float(cbvf_value)])
 
         # Add control bounds
@@ -250,94 +250,94 @@ class CBVFQPController:
             G = constraint_coeff
             h = constraint_bound
 
-        # if self.verbose:
-        #     print(f"QP Setup - P: {P.shape}, q: {q.shape}, G: {G.shape}, h: {h.shape}")
-        #     print(f"P condition number: {np.linalg.cond(P):.2e}")
-        #     print(f"Constraint matrix G:\n{G}")
-        #     print(f"Constraint bounds h: {h}")
-        #     print(f"Reference control: {u_ref_np}")
-        #
-        #     # Check constraint violations at reference
-        #     if G.shape[0] > 0:
-        #         violations = G @ u_ref_np - h
-        #         print(f"Constraint violations at u_ref: {violations}")
-        #         print(f"Max violation: {np.max(violations):.6f}")
-
         if self.verbose:
-            # Debug: Analyze constraint feasibility
-            print("\n=== CONSTRAINT FEASIBILITY ANALYSIS ===")
+            print(f"QP Setup - P: {P.shape}, q: {q.shape}, G: {G.shape}, h: {h.shape}")
+            print(f"P condition number: {np.linalg.cond(P):.2e}")
+            print(f"Constraint matrix G:\n{G}")
+            print(f"Constraint bounds h: {h}")
+            print(f"Reference control: {u_ref_np}")
 
-            # Safety constraint: constraint_coeff * u <= constraint_bound
-            # Rearranging: u <= constraint_bound / constraint_coeff (if coeff < 0)
-            #              u >= constraint_bound / constraint_coeff (if coeff > 0)
-            safety_coeff = constraint_coeff[0, 0]
-            safety_bound = constraint_bound[0]
+            # Check constraint violations at reference
+            if G.shape[0] > 0:
+                violations = G @ u_ref_np - h
+                print(f"Constraint violations at u_ref: {violations}")
+                print(f"Max violation: {np.max(violations):.6f}")
 
-            print(f"\n1. Safety constraint: {safety_coeff:.6e} * u <= {safety_bound:.6f}")
-            if abs(safety_coeff) > 1e-10:  # Avoid division by very small numbers
-                if safety_coeff > 0:
-                    u_max_from_safety = safety_bound / safety_coeff
-                    print(f"   → u <= {u_max_from_safety:.2f}")
-                    safety_feasible_range = (-np.inf, u_max_from_safety)
-                else:
-                    u_min_from_safety = safety_bound / safety_coeff
-                    print(f"   → u >= {u_min_from_safety:.2f}")
-                    safety_feasible_range = (u_min_from_safety, np.inf)
-            else:
-                print(f"   → Coefficient too small, constraint is: 0 <= {safety_bound:.6f}")
-                if safety_bound >= 0:
-                    print("   → Always satisfied")
-                    safety_feasible_range = (-np.inf, np.inf)
-                else:
-                    print("   → IMPOSSIBLE - constraint cannot be satisfied!")
-                    safety_feasible_range = (np.inf, -np.inf)
-
-            # Control bounds
-            print(f"\n2. Control bounds:")
-            print(f"   Lower bound: u >= {-u_max_mag}")
-            print(f"   Upper bound: u <= {u_max_mag}")
-            control_feasible_range = (-u_max_mag, u_max_mag)
-
-            # Check intersection of feasible ranges
-            print(f"\n=== FEASIBLE RANGES ===")
-            print(f"Safety constraint allows: u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
-            print(f"Control bounds allow:     u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
-
-            # Find intersection
-            feasible_min = max(safety_feasible_range[0], control_feasible_range[0])
-            feasible_max = min(safety_feasible_range[1], control_feasible_range[1])
-
-            if feasible_min <= feasible_max:
-                print(f"\nFEASIBLE REGION: u ∈ [{feasible_min:.2f}, {feasible_max:.2f}]")
-                print(f"Optimal feasible control closest to u_ref={u_ref_np[0]}: ", end="")
-                u_optimal = np.clip(u_ref_np[0], feasible_min, feasible_max)
-                print(f"{u_optimal:.2f}")
-            else:
-                print(f"\nINFEASIBLE! No value of u can satisfy all constraints.")
-                print(f"Safety requires u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
-                print(
-                    f"But control bounds restrict u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
-                print(f"These ranges don't overlap!")
-
-                # Suggest which constraint to relax
-                if safety_coeff < 0 and u_min_from_safety > u_max_mag:
-                    violation_amount = u_min_from_safety - u_max_mag
-                    print(f"\nSuggestion: Either:")
-                    print(f"  1. Increase control bound to at least {u_min_from_safety:.2f}")
-                    print(f"  2. Relax safety constraint (reduce gamma or modify CBVF)")
-                    print(f"  3. Use u = {u_max_mag} (violates safety by {violation_amount:.2f})")
-
-            # Also check the actual safety value at different controls
-            print(f"\n=== SAFETY VALUES AT KEY CONTROLS ===")
-            for u_test, label in [(u_ref_np[0], "u_ref"),
-                                  (-u_max_mag, "u_min"),
-                                  (u_max_mag, "u_max"),
-                                  (0, "u=0")]:
-                safety_val = a_term + safety_coeff * u_test + self.gamma * float(cbvf_value)
-                print(
-                    f"At {label}={u_test:8.2f}: safety = {safety_val:10.6f} {'(SAFE)' if safety_val >= 0 else '(UNSAFE)'}")
-
-            print("=" * 50 + "\n")
+        # if self.verbose:
+        #     # Debug: Analyze constraint feasibility
+        #     print("\n=== CONSTRAINT FEASIBILITY ANALYSIS ===")
+        #
+        #     # Safety constraint: constraint_coeff * u <= constraint_bound
+        #     # Rearranging: u <= constraint_bound / constraint_coeff (if coeff < 0)
+        #     #              u >= constraint_bound / constraint_coeff (if coeff > 0)
+        #     safety_coeff = constraint_coeff[0, 0]
+        #     safety_bound = constraint_bound[0]
+        #
+        #     print(f"\n1. Safety constraint: {safety_coeff:.6e} * u <= {safety_bound:.6f}")
+        #     if abs(safety_coeff) > 1e-10:  # Avoid division by very small numbers
+        #         if safety_coeff > 0:
+        #             u_max_from_safety = safety_bound / safety_coeff
+        #             print(f"   → u <= {u_max_from_safety:.2f}")
+        #             safety_feasible_range = (-np.inf, u_max_from_safety)
+        #         else:
+        #             u_min_from_safety = safety_bound / safety_coeff
+        #             print(f"   → u >= {u_min_from_safety:.2f}")
+        #             safety_feasible_range = (u_min_from_safety, np.inf)
+        #     else:
+        #         print(f"   → Coefficient too small, constraint is: 0 <= {safety_bound:.6f}")
+        #         if safety_bound >= 0:
+        #             print("   → Always satisfied")
+        #             safety_feasible_range = (-np.inf, np.inf)
+        #         else:
+        #             print("   → IMPOSSIBLE - constraint cannot be satisfied!")
+        #             safety_feasible_range = (np.inf, -np.inf)
+        #
+        #     # Control bounds
+        #     print(f"\n2. Control bounds:")
+        #     print(f"   Lower bound: u >= {-u_max_mag}")
+        #     print(f"   Upper bound: u <= {u_max_mag}")
+        #     control_feasible_range = (-u_max_mag, u_max_mag)
+        #
+        #     # Check intersection of feasible ranges
+        #     print(f"\n=== FEASIBLE RANGES ===")
+        #     print(f"Safety constraint allows: u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
+        #     print(f"Control bounds allow:     u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
+        #
+        #     # Find intersection
+        #     feasible_min = max(safety_feasible_range[0], control_feasible_range[0])
+        #     feasible_max = min(safety_feasible_range[1], control_feasible_range[1])
+        #
+        #     if feasible_min <= feasible_max:
+        #         print(f"\nFEASIBLE REGION: u ∈ [{feasible_min:.2f}, {feasible_max:.2f}]")
+        #         print(f"Optimal feasible control closest to u_ref={u_ref_np[0]}: ", end="")
+        #         u_optimal = np.clip(u_ref_np[0], feasible_min, feasible_max)
+        #         print(f"{u_optimal:.2f}")
+        #     else:
+        #         print(f"\nINFEASIBLE! No value of u can satisfy all constraints.")
+        #         print(f"Safety requires u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
+        #         print(
+        #             f"But control bounds restrict u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
+        #         print(f"These ranges don't overlap!")
+        #
+        #         # Suggest which constraint to relax
+        #         if safety_coeff < 0 and u_min_from_safety > u_max_mag:
+        #             violation_amount = u_min_from_safety - u_max_mag
+        #             print(f"\nSuggestion: Either:")
+        #             print(f"  1. Increase control bound to at least {u_min_from_safety:.2f}")
+        #             print(f"  2. Relax safety constraint (reduce gamma or modify CBVF)")
+        #             print(f"  3. Use u = {u_max_mag} (violates safety by {violation_amount:.2f})")
+        #
+        #     # Also check the actual safety value at different controls
+        #     print(f"\n=== SAFETY VALUES AT KEY CONTROLS ===")
+        #     for u_test, label in [(u_ref_np[0], "u_ref"),
+        #                           (-u_max_mag, "u_min"),
+        #                           (u_max_mag, "u_max"),
+        #                           (0, "u=0")]:
+        #         safety_val = a_term + safety_coeff * u_test + self.gamma * float(cbvf_value)
+        #         print(
+        #             f"At {label}={u_test:8.2f}: safety = {safety_val:10.6f} {'(SAFE)' if safety_val >= 0 else '(UNSAFE)'}")
+        #
+        #     print("=" * 50 + "\n")
 
         # Use direct quadprog call for debugging
         if self.solver == 'quadprog':
