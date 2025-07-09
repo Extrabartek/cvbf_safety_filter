@@ -18,18 +18,9 @@ class DoubleIntegrator(hj.ControlAndDisturbanceAffineDynamics):
         super().__init__(control_mode, disturbance_mode, control_space, disturbance_space)
 
     def open_loop_dynamics(self, state, time):
-        """
-        Dynamics:
-
-        x1 - yaw rate, x2 - sideslip angle
-
-        x1_dot = 1/Iz * (Lf*Ff - LR*Fr + u)
-        x2_dot = arctan((Ff+Fr)/(m*Vx)) - x1
-        """
-
         x1, x2 = state
 
-        return jnp.array([x1, 0])
+        return jnp.array([x2, 0])
 
     def control_jacobian(self, state, time):
         return jnp.array([[0],
