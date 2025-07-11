@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import numpy as np
+from numpy import float64
 import qpsolvers
 
 
@@ -27,7 +28,7 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
             b_qp = None
             meq = 0
 
-        if False:
+        if verbose:
             print(f"=== Direct Quadprog Call ===")
             print(f"G_qp (P) shape: {G_qp.shape}, condition: {np.linalg.cond(G_qp):.2e}")
             print(f"a_qp (-q): {a_qp}")
@@ -43,7 +44,7 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
             # Unconstrained case
             result = quadprog.solve_qp(G_qp, a_qp)
 
-        if False:
+        if verbose:
             print(f"Quadprog raw result: {result}")
             print(f"Result type: {type(result)}")
             if len(result) >= 2:
@@ -181,12 +182,13 @@ class CBVFQPController:
         self.verbose = verbose
         self.safe_threshold = 0.0  # Safe set threshold
 
-    def compute_safe_control(self, state, time, u_ref, dynamics, u_prev, u_max_mag=None):
-        gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold, debug=False)
+    def compute_safe_control(self, state, time, u_ref, dynamics, u_prev, u_max_mag=None, gradient_time=None):
+        if gradient_time is None:
+            gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold, debug=False)
         if self.verbose:
             print(f"Current state: {state}, time: {time}, reference control: {u_ref}")
             print(f"Gradient time for safe entry: {gradient_time}")
-        cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradients(state, gradient_time)
+        cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradient(state, gradient_time)
 
         # Get system matrices
         p_x = dynamics.open_loop_dynamics(state, time)
@@ -219,12 +221,12 @@ class CBVFQPController:
                 d_min = -d_max
 
             worst_case_d = np.where(disturbance_term >= 0, d_min, d_max)
-            a_term += np.dot(disturbance_term.flatten(), worst_case_d)
+            # a_term += np.dot(disturbance_term.flatten(), worst_case_d)
 
         # Set up QP
         n_controls = len(u_ref_np)
         P = 2.0 * np.eye(n_controls)
-        q = np.array(-2.0 * u_ref_np)
+        q = np.array(-2.0 * u_ref_np, dtype=float64)
 
         # Safety constraint
         constraint_coeff = -np.dot(cbvf_grad_x_np, q_x_np)
@@ -263,81 +265,81 @@ class CBVFQPController:
                 print(f"Constraint violations at u_ref: {violations}")
                 print(f"Max violation: {np.max(violations):.6f}")
 
-        # if self.verbose:
-        #     # Debug: Analyze constraint feasibility
-        #     print("\n=== CONSTRAINT FEASIBILITY ANALYSIS ===")
-        #
-        #     # Safety constraint: constraint_coeff * u <= constraint_bound
-        #     # Rearranging: u <= constraint_bound / constraint_coeff (if coeff < 0)
-        #     #              u >= constraint_bound / constraint_coeff (if coeff > 0)
-        #     safety_coeff = constraint_coeff[0, 0]
-        #     safety_bound = constraint_bound[0]
-        #
-        #     print(f"\n1. Safety constraint: {safety_coeff:.6e} * u <= {safety_bound:.6f}")
-        #     if abs(safety_coeff) > 1e-10:  # Avoid division by very small numbers
-        #         if safety_coeff > 0:
-        #             u_max_from_safety = safety_bound / safety_coeff
-        #             print(f"   → u <= {u_max_from_safety:.2f}")
-        #             safety_feasible_range = (-np.inf, u_max_from_safety)
-        #         else:
-        #             u_min_from_safety = safety_bound / safety_coeff
-        #             print(f"   → u >= {u_min_from_safety:.2f}")
-        #             safety_feasible_range = (u_min_from_safety, np.inf)
-        #     else:
-        #         print(f"   → Coefficient too small, constraint is: 0 <= {safety_bound:.6f}")
-        #         if safety_bound >= 0:
-        #             print("   → Always satisfied")
-        #             safety_feasible_range = (-np.inf, np.inf)
-        #         else:
-        #             print("   → IMPOSSIBLE - constraint cannot be satisfied!")
-        #             safety_feasible_range = (np.inf, -np.inf)
-        #
-        #     # Control bounds
-        #     print(f"\n2. Control bounds:")
-        #     print(f"   Lower bound: u >= {-u_max_mag}")
-        #     print(f"   Upper bound: u <= {u_max_mag}")
-        #     control_feasible_range = (-u_max_mag, u_max_mag)
-        #
-        #     # Check intersection of feasible ranges
-        #     print(f"\n=== FEASIBLE RANGES ===")
-        #     print(f"Safety constraint allows: u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
-        #     print(f"Control bounds allow:     u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
-        #
-        #     # Find intersection
-        #     feasible_min = max(safety_feasible_range[0], control_feasible_range[0])
-        #     feasible_max = min(safety_feasible_range[1], control_feasible_range[1])
-        #
-        #     if feasible_min <= feasible_max:
-        #         print(f"\nFEASIBLE REGION: u ∈ [{feasible_min:.2f}, {feasible_max:.2f}]")
-        #         print(f"Optimal feasible control closest to u_ref={u_ref_np[0]}: ", end="")
-        #         u_optimal = np.clip(u_ref_np[0], feasible_min, feasible_max)
-        #         print(f"{u_optimal:.2f}")
-        #     else:
-        #         print(f"\nINFEASIBLE! No value of u can satisfy all constraints.")
-        #         print(f"Safety requires u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
-        #         print(
-        #             f"But control bounds restrict u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
-        #         print(f"These ranges don't overlap!")
-        #
-        #         # Suggest which constraint to relax
-        #         if safety_coeff < 0 and u_min_from_safety > u_max_mag:
-        #             violation_amount = u_min_from_safety - u_max_mag
-        #             print(f"\nSuggestion: Either:")
-        #             print(f"  1. Increase control bound to at least {u_min_from_safety:.2f}")
-        #             print(f"  2. Relax safety constraint (reduce gamma or modify CBVF)")
-        #             print(f"  3. Use u = {u_max_mag} (violates safety by {violation_amount:.2f})")
-        #
-        #     # Also check the actual safety value at different controls
-        #     print(f"\n=== SAFETY VALUES AT KEY CONTROLS ===")
-        #     for u_test, label in [(u_ref_np[0], "u_ref"),
-        #                           (-u_max_mag, "u_min"),
-        #                           (u_max_mag, "u_max"),
-        #                           (0, "u=0")]:
-        #         safety_val = a_term + safety_coeff * u_test + self.gamma * float(cbvf_value)
-        #         print(
-        #             f"At {label}={u_test:8.2f}: safety = {safety_val:10.6f} {'(SAFE)' if safety_val >= 0 else '(UNSAFE)'}")
-        #
-        #     print("=" * 50 + "\n")
+        if self.verbose:
+            # Debug: Analyze constraint feasibility
+            print("\n=== CONSTRAINT FEASIBILITY ANALYSIS ===")
+
+            # Safety constraint: constraint_coeff * u <= constraint_bound
+            # Rearranging: u <= constraint_bound / constraint_coeff (if coeff < 0)
+            #              u >= constraint_bound / constraint_coeff (if coeff > 0)
+            safety_coeff = constraint_coeff[0]
+            safety_bound = constraint_bound[0]
+
+            print(f"\n1. Safety constraint: {safety_coeff:.6e} * u <= {safety_bound:.6f}")
+            if abs(safety_coeff) > 1e-10:  # Avoid division by very small numbers
+                if safety_coeff > 0:
+                    u_max_from_safety = safety_bound / safety_coeff
+                    print(f"   → u <= {u_max_from_safety:.2f}")
+                    safety_feasible_range = (-np.inf, u_max_from_safety)
+                else:
+                    u_min_from_safety = safety_bound / safety_coeff
+                    print(f"   → u >= {u_min_from_safety:.2f}")
+                    safety_feasible_range = (u_min_from_safety, np.inf)
+            else:
+                print(f"   → Coefficient too small, constraint is: 0 <= {safety_bound:.6f}")
+                if safety_bound >= 0:
+                    print("   → Always satisfied")
+                    safety_feasible_range = (-np.inf, np.inf)
+                else:
+                    print("   → IMPOSSIBLE - constraint cannot be satisfied!")
+                    safety_feasible_range = (np.inf, -np.inf)
+
+            # Control bounds
+            print(f"\n2. Control bounds:")
+            print(f"   Lower bound: u >= {-u_max_mag}")
+            print(f"   Upper bound: u <= {u_max_mag}")
+            control_feasible_range = (-u_max_mag, u_max_mag)
+
+            # Check intersection of feasible ranges
+            print(f"\n=== FEASIBLE RANGES ===")
+            print(f"Safety constraint allows: u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
+            print(f"Control bounds allow:     u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
+
+            # Find intersection
+            feasible_min = max(safety_feasible_range[0], control_feasible_range[0])
+            feasible_max = min(safety_feasible_range[1], control_feasible_range[1])
+
+            if feasible_min <= feasible_max:
+                print(f"\nFEASIBLE REGION: u ∈ [{feasible_min:.2f}, {feasible_max:.2f}]")
+                print(f"Optimal feasible control closest to u_ref={u_ref_np[0]}: ", end="")
+                u_optimal = np.clip(u_ref_np[0], feasible_min, feasible_max)
+                print(f"{u_optimal:.2f}")
+            else:
+                print(f"\nINFEASIBLE! No value of u can satisfy all constraints.")
+                print(f"Safety requires u ∈ [{safety_feasible_range[0]:.2f}, {safety_feasible_range[1]:.2f}]")
+                print(
+                    f"But control bounds restrict u ∈ [{control_feasible_range[0]:.2f}, {control_feasible_range[1]:.2f}]")
+                print(f"These ranges don't overlap!")
+
+                # Suggest which constraint to relax
+                if safety_coeff < 0 and u_min_from_safety > u_max_mag:
+                    violation_amount = u_min_from_safety - u_max_mag
+                    print(f"\nSuggestion: Either:")
+                    print(f"  1. Increase control bound to at least {u_min_from_safety:.2f}")
+                    print(f"  2. Relax safety constraint (reduce gamma or modify CBVF)")
+                    print(f"  3. Use u = {u_max_mag} (violates safety by {violation_amount:.2f})")
+
+            # Also check the actual safety value at different controls
+            print(f"\n=== SAFETY VALUES AT KEY CONTROLS ===")
+            for u_test, label in [(u_ref_np[0], "u_ref"),
+                                  (-u_max_mag, "u_min"),
+                                  (u_max_mag, "u_max"),
+                                  (0, "u=0")]:
+                safety_val = a_term + safety_coeff * u_test + self.gamma * float(cbvf_value)
+                print(
+                    f"At {label}={u_test:8.2f}: safety = {safety_val:10.6f} {'(SAFE)' if safety_val >= 0 else '(UNSAFE)'}")
+
+            print("=" * 50 + "\n")
 
         # Use direct quadprog call for debugging
         if self.solver == 'quadprog':
@@ -346,7 +348,15 @@ class CBVFQPController:
             u_safe = qpsolvers.solve_qp(P, q, G, h, solver=self.solver, verbose=self.verbose)
 
         if u_safe is None:
-            print("QP solver failed, using previous control")
-            return u_prev, (a_term + np.dot(cbvf_grad_x_np @ q_x_np, u_prev) + self.gamma * float(cbvf_value))[0]
+            safety_coeff = constraint_coeff[0]
+            safety_bound = constraint_bound[0]
 
-        return u_safe[0], a_term + np.dot(cbvf_grad_x_np @ q_x_np, u_safe) + self.gamma * float(cbvf_value)
+            u_rescue = np.clip(safety_bound / safety_coeff, -u_max_mag, u_max_mag)
+            # u_rescue = safety_bound / safety_coeff if abs(safety_coeff) > 1e-10 else 0.0
+            print(f"QP solver failed at time {time:.2f}, using clossest feasible control: {u_rescue}")
+            print(f"Safety constraint: {safety_coeff:.6e} * u <= {safety_bound:.6f}")
+
+            return u_rescue, (a_term + np.dot(cbvf_grad_x_np @ q_x_np, u_rescue
+                                               ) + self.gamma * float(cbvf_value))[0], a_term
+
+        return u_safe[0], a_term + np.dot(cbvf_grad_x_np @ q_x_np, u_safe) + self.gamma * float(cbvf_value), a_term
