@@ -184,11 +184,11 @@ class CBVFQPController:
 
     def compute_safe_control(self, state, time, u_ref, dynamics, u_prev, u_max_mag=None, gradient_time=None):
         if gradient_time is None:
-            gradient_time = find_safe_entry_time_efficient(self.cbvf, state, self.safe_threshold, debug=False)
+            gradient_time = self.cbvf.compute_safe_entry_gradients_efficient(jnp.array(state.reshape(1, -1)))[0]
         if self.verbose:
             print(f"Current state: {state}, time: {time}, reference control: {u_ref}")
             print(f"Gradient time for safe entry: {gradient_time}")
-        cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradient(state, gradient_time)
+        cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradient(state, gradient_time[0])
 
         # Get system matrices
         p_x = dynamics.open_loop_dynamics(state, time)
@@ -230,7 +230,7 @@ class CBVFQPController:
 
         # Safety constraint
         constraint_coeff = -np.dot(cbvf_grad_x_np, q_x_np)
-        constraint_bound = np.array([a_term + self.gamma * float(cbvf_value)])
+        constraint_bound = np.array([a_term + self.gamma * float(cbvf_value)])  # Small epsilon for numerical stability
 
         # Add control bounds
         if u_max_mag is not None:

@@ -91,3 +91,62 @@ class CBVFInterpolator:
         # Vectorize over the first axis (states)
         vectorized_grad = jax.vmap(self.spatial_grad_interpolator, in_axes=(0, None))
         return vectorized_grad(states, time)
+
+    def compute_safe_entry_gradients_efficient(self, states: jnp.ndarray) -> Tuple[
+        jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        """
+        More efficient version using direct grid interpolation instead of repeated calls.
+
+        Args:
+            states: Array of states to analyze, shape (n_states, 2)
+
+        Returns:
+            entry_times: Time when each state first enters safe region, shape (n_states,)
+            entry_values: CBVF values at entry times, shape (n_states,)
+            spatial_grads: Spatial gradients at entry, shape (n_states, 2)
+            time_grads: Time gradients at entry, shape (n_states,)
+        """
+        # Ensure times is a JAX array for proper indexing
+        times_jax = jnp.array(self.times)
+
+        # Convert states to grid coordinates for efficient lookup
+        x1_range = (self.grid.domain.lo[0], self.grid.domain.hi[0])
+        x2_range = (self.grid.domain.lo[1], self.grid.domain.hi[1])
+
+        def state_to_indices(state):
+            x1_idx = (state[0] - x1_range[0]) / (x1_range[1] - x1_range[0]) * (self.cbvf_values.shape[1] - 1)
+            x2_idx = (state[1] - x2_range[0]) / (x2_range[1] - x2_range[0]) * (self.cbvf_values.shape[2] - 1)
+            return jnp.array([x1_idx, x2_idx])
+
+        def find_safe_entry_efficient(state):
+            # Get spatial indices for this state
+            spatial_coords = state_to_indices(state)
+
+            # Extract time series for this spatial location via interpolation
+            def get_value_at_time_idx(t_idx):
+                coords = jnp.array([[t_idx], [spatial_coords[0]], [spatial_coords[1]]])
+                return map_coordinates(self.cbvf_values, coords, order=1, mode='nearest')[0]
+
+            # Sample at all time indices
+            time_indices = jnp.arange(len(times_jax))
+            values_over_time = jax.vmap(get_value_at_time_idx)(time_indices.astype(float))
+
+            # Find safe entry - we want the LAST (most negative time) occurrence
+            safe_mask = values_over_time >= 0.0
+            has_safe_entry = jnp.any(safe_mask)
+
+            # Find the maximum index where safe_mask is True (earliest/most negative time)
+            safe_indices = jnp.where(safe_mask, jnp.arange(len(safe_mask)), -1)
+            entry_idx = jnp.where(has_safe_entry,
+                                  jnp.max(safe_indices),  # Last True index (most negative time)
+                                  0)  # Default to most negative time if never safe
+            entry_time = times_jax[entry_idx]
+
+            # Get gradients at entry time using existing methods
+            value, spatial_grad, time_grad = self.get_value_and_gradient(state, entry_time)
+
+            return entry_time, value, spatial_grad, time_grad
+
+        # Vectorize and compute
+        vectorized_compute = jax.vmap(find_safe_entry_efficient)
+        return vectorized_compute(states)
