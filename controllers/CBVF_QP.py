@@ -16,7 +16,7 @@ def debug_quadprog_call(P, q, G, h, verbose=True):
         # Our problem: minimize (1/2)u^T P u + q^T u subject to G u <= h
         # Conversion: G_qp = P, a_qp = -q, C_qp^T = -G, b_qp = -h
 
-        G_qp = P
+        G_qp = 0.5 * (P + P.T)  # Ensure symmetry for positive definiteness
         a_qp = -q
 
         if G.shape[0] > 0:
@@ -230,7 +230,7 @@ class CBVFQPController:
 
         # Safety constraint
         constraint_coeff = -np.dot(cbvf_grad_x_np, q_x_np)
-        constraint_bound = np.array([a_term + self.gamma * float(cbvf_value)])  # Small epsilon for numerical stability
+        constraint_bound = np.array([a_term + self.gamma * float(cbvf_value)])
 
         # Add control bounds
         if u_max_mag is not None:
@@ -355,6 +355,7 @@ class CBVFQPController:
             # u_rescue = safety_bound / safety_coeff if abs(safety_coeff) > 1e-10 else 0.0
             print(f"QP solver failed at time {time:.2f}, using clossest feasible control: {u_rescue}")
             print(f"Safety constraint: {safety_coeff:.6e} * u <= {safety_bound:.6f}")
+            print(f"Solver wanted input u = {safety_bound / safety_coeff:.5f}")
 
             return u_rescue, (a_term + np.dot(cbvf_grad_x_np @ q_x_np, u_rescue
                                                ) + self.gamma * float(cbvf_value))[0], a_term
