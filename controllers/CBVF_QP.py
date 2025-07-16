@@ -188,8 +188,13 @@ class CBVFQPController:
         if self.verbose:
             print(f"Current state: {state}, time: {time}, reference control: {u_ref}")
             print(f"Gradient time for safe entry: {gradient_time}")
-        cbvf_value, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradient(state, gradient_time[0])
+        _, cbvf_grad_x, cbvf_grad_t = self.cbvf.get_value_and_gradient(state, gradient_time[0])
+        cbvf_value, _, _ = self.cbvf.get_value_and_gradient(state, self.cbvf.times[-1])
 
+        if np.isclose(gradient_time, self.cbvf.times[-1]):
+            if self.verbose:
+                print(f"Using last time {self.cbvf.times[-1]} for gradient computation")
+                print("Spicy timer gradients incoming 🥵🥵🥵")
         # Get system matrices
         p_x = dynamics.open_loop_dynamics(state, time)
         q_x = dynamics.control_jacobian(state, time)

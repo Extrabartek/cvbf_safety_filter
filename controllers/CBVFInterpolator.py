@@ -132,7 +132,7 @@ class CBVFInterpolator:
             values_over_time = jax.vmap(get_value_at_time_idx)(time_indices.astype(float))
 
             # Find safe entry - we want the LAST (most negative time) occurrence
-            safe_mask = values_over_time >= 0.0
+            safe_mask = values_over_time <= 0.0
             has_safe_entry = jnp.any(safe_mask)
 
             # Find the maximum index where safe_mask is True (earliest/most negative time)
