@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-def pacejka_lateral_force(alpha, fz, mu, c):
+def pacejka_lateral_force(alpha, fz, mu, cor):
     """
     Calculate the lateral force of the tire, using the pacejka magic formula
 
@@ -14,8 +14,8 @@ def pacejka_lateral_force(alpha, fz, mu, c):
     c_alpha_ref = 1.0
 
     d = mu * fz
-    b = c / (c_alpha_ref * d)
-    e = -1.0 * jnp.ones(jnp.shape(alpha))
+    b = cor / (c_alpha_ref * d)
+    e = -0.1 * jnp.ones(jnp.shape(alpha))
     c = 1.3 * jnp.ones(jnp.shape(alpha))
 
-    return -d * jnp.sin(c * jnp.atan(b * alpha - e * (b * alpha - jnp.atan(b * alpha))))
+    return d * jnp.sin(c * jnp.atan(b * alpha - e * (b * alpha - jnp.atan(b * alpha))))

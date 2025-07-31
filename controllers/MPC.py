@@ -17,6 +17,7 @@ yp = model.set_variable(var_type='_x', var_name='yp', shape=(1, 1))
 delta = model.set_variable(var_type='_x', var_name='delta', shape=(1, 1))
 d_delta = model.set_variable(var_type='_u', var_name='d_delta', shape=(1, 1))
 vy_dot = model.set_variable(var_type='_x', var_name='vy_dot', shape=(1, 1))
+
 r_dot = model.set_variable(var_type='_x', var_name='r_dot', shape=(1, 1))
 
 
@@ -131,15 +132,15 @@ ax[0].set_ylabel('x/y position [m]')
 ax[1].set_ylabel('control input [rad/s]')
 ax[1].set_xlabel('time [s]')
 #
-u0 = np.zeros((1,1))
-for i in range(200):
-    simulator.make_step(u0)
-#
-sim_graphics.plot_results()
-# # Reset the limits on all axes in graphic to show the data.
-sim_graphics.reset_axes()
-# # Show the figure:
-fig.show()
+# u0 = np.zeros((1,1))
+# for i in range(200):
+#     simulator.make_step(u0)
+# #
+# sim_graphics.plot_results()
+# # # Reset the limits on all axes in graphic to show the data.
+# sim_graphics.reset_axes()
+# # # Show the figure:
+# fig.show()
 #
 # print(mpc.bounds['lower', '_x', 'vy'])
 #

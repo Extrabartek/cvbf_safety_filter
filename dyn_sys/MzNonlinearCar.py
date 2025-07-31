@@ -59,13 +59,13 @@ class MzNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
         """
 
         x1, x2 = state
-        alpha_f = jnp.atan(x2 + self.car_params['Lf'] * x1 / self.car_params['Vx'])
-        alpha_r = jnp.atan(x2 - self.car_params['Lf'] * x1 / self.car_params['Vx'])
+        alpha_f = -jnp.atan(x2 + self.car_params['Lf'] * x1 / self.car_params['Vx'])
+        alpha_r = -jnp.atan(x2 - self.car_params['Lr'] * x1 / self.car_params['Vx'])
         f_f = pacejka_lateral_force(alpha_f, self.car_params['Fzf'], self.car_params['mu'], self.car_params['Cf'])
         f_r = pacejka_lateral_force(alpha_r, self.car_params['Fzr'], self.car_params['mu'], self.car_params['Cr'])
 
         x1_dot = 1/self.car_params['Iz'] * (self.car_params['Lf'] * f_f - self.car_params['Lr'] * f_r)
-        x2_dot = jnp.atan((f_f+f_r) / self.car_params['m'] * self.car_params['Vx']) - x1
+        x2_dot = (f_f+f_r) / (self.car_params['m'] * self.car_params['Vx']) - x1
 
         return jnp.array([x1_dot, x2_dot])
 
