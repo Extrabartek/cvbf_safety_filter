@@ -65,7 +65,7 @@ class MzNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
         f_r = pacejka_lateral_force(alpha_r, self.car_params['Fzr'], self.car_params['mu'], self.car_params['Cr'])
 
         x1_dot = 1/self.car_params['Iz'] * (self.car_params['Lf'] * f_f - self.car_params['Lr'] * f_r)
-        x2_dot = (f_f+f_r) / (self.car_params['m'] * self.car_params['Vx']) - x1
+        x2_dot = (f_f+f_r) * jnp.cos(x2) / (self.car_params['m'] * self.car_params['Vx']) - x1
 
         return jnp.array([x1_dot, x2_dot])
 
