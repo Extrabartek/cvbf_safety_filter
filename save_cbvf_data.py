@@ -15,18 +15,19 @@ os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '1.0'
 jax.config.update("jax_enable_x64", True)
 
 import cbvf_reachability as cbvf
-from dyn_sys.MzNonlinearCar import MzNonlinearCar
+# from dyn_sys.MzNonlinearCar import MzNonlinearCar
+from dyn_sys.MzNonlinearCar4wheels import MzNonlinearCar
 from  controllers.CBVFInterpolator import CBVFInterpolator
 
 # Create dynamics
-car_params = {'m': 1380, 'Vx': 100.0/3.6, 'Lf': 1.384, 'Lr': 2.79-1.384, 'Iz': 2634.5, 'mu': 1.0, 'Mz': 10000,
-                               'Cf': 120000, 'Cr': 190000} # camry stats
+car_params = {'m': 1900, 'Vx': 110.0/3.6, 'Lf': 1.41, 'Lr': 1.47, 'Iz': 3500, 'mu': 1.075, 'Mz': 0.1,
+                               'Cf': 52000, 'Cr': 75000, 'Wf': 0.788, 'Wr': 0.782,}
 
 dynamics = MzNonlinearCar(car_params=car_params)
 
 # Grid parameters
-x1_lim = 200
-x2_lim = 45
+x1_lim = 55
+x2_lim = 25
 
 x1_lim = x1_lim * jnp.pi / 180
 x2_lim = x2_lim * jnp.pi / 180
@@ -34,18 +35,18 @@ x2_lim = x2_lim * jnp.pi / 180
 # Create grid
 grid = cbvf.Grid.from_lattice_parameters_and_boundary_conditions(
     cbvf.sets.Box(np.array([-x1_lim, -x2_lim]), np.array([x1_lim, x2_lim])),
-    (600, 600)
+    (401, 400)
 )
 
 # Initial values
-values_vi = jnp.linalg.norm(grid.states[..., :2], axis=-1) - 6 * jnp.pi / 180
-initial_values = jnp.linalg.norm(grid.states[..., :2], axis=-1) - 6 * (jnp.pi / 180)
+values_vi = jnp.linalg.norm(grid.states[..., :2], axis=-1, ord=2) - 6 * jnp.pi / 180
+initial_values = jnp.linalg.norm(grid.states[..., :2], axis=-1, ord=2) - 6 * (jnp.pi / 180)
 
 # Time vector
-times = np.linspace(0, -0.35, 450)
+times = np.linspace(0, -0.5, 100)
 
 # Solver settings
-gamma = 10.0
+gamma = 0.0
 solver_settings = cbvf.SolverSettings.with_accuracy(
     "cbvf",
     hamiltonian_postprocessor=cbvf.solver.identity,
@@ -154,7 +155,7 @@ with jax.default_device(cpu):
 # fig.show()
 
 # Save data
-savemat('data/cbvf_data.mat', {
+savemat('data/cbvf_data_port_comp_4w_cooked.mat', {
     'grid_x1': grid_cpu.states[:, 0, 0],
     'grid_x2': grid_cpu.states[0, :, 1],
     'cbvf_values': target_values_cpu,
@@ -163,7 +164,6 @@ savemat('data/cbvf_data.mat', {
     'time_grads': time_grads,
     'entry_times': entry_times_grid,
     'times': times,
-    'dynamics': dynamics,
     'gamma': gamma,
     'initial_values': initial_values,
     'car_params': car_params,

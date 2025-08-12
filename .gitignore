@@ -2,5 +2,8 @@
 .idea/
 
 # ignore testing files
-testing_hj.ipynb
-testing.py
+testing/testing_hj.ipynb
+testing/testing.py
+
+# ignore testing folder
+testing/
