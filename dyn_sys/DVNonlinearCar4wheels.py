@@ -5,7 +5,7 @@ from utils.tpf_handler import read_tpf
 from tire_models.pacejka_62 import pacejka_62_scalar, preprocess_tpf_for_jax
 
 
-class MzNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
+class DvNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
 
     """
 
@@ -64,26 +64,29 @@ class MzNonlinearCar(hj.ControlAndDisturbanceAffineDynamics):
         x1 - yaw rate, x2 - sideslip angle
         """
 
-        x1, x2 = state
-        alpha_fl = jnp.atan(x2 + self.car_params['Lf'] * x1 / (self.car_params['Vx'] - self.car_params['Wf'] * x1))
-        alpha_fr = jnp.atan(x2 + self.car_params['Lf'] * x1 / (self.car_params['Vx'] + self.car_params['Wf'] * x1))
+        x1, x2, x3 = state
+        alpha_fl = -x3 + jnp.atan(x2 + self.car_params['Lf'] * x1 / (self.car_params['Vx'] - self.car_params['Wf'] * x1))
+        alpha_fr = -x3 + jnp.atan(x2 + self.car_params['Lf'] * x1 / (self.car_params['Vx'] + self.car_params['Wf'] * x1))
         alpha_rl = jnp.atan(x2 - self.car_params['Lr'] * x1 / (self.car_params['Vx'] - self.car_params['Wr'] * x1))
         alpha_rr = jnp.atan(x2 - self.car_params['Lr'] * x1 / (self.car_params['Vx'] + self.car_params['Wr'] * x1))
 
-        f_fl = pacejka_62_scalar(self.tire_data, self.car_params['Fz_Fl'], 0.0, alpha_fl, 0.0, self.car_params['Vx'], 4)[1]
-        f_fr = pacejka_62_scalar(self.tire_data, self.car_params['Fz_Fl'], 0.0, alpha_fr, 0.0, self.car_params['Vx'], 4)[1]
-        f_rl = pacejka_62_scalar(self.tire_data, self.car_params['Fz_Rl'], 0.0, alpha_rl, 0.0, self.car_params['Vx'], 4)[1]
-        f_rr = pacejka_62_scalar(self.tire_data, self.car_params['Fz_Rr'], 0.0, alpha_rr, 0.0, self.car_params['Vx'], 4)[1]
+        f_fl = self.car_params['mu'] * pacejka_62_scalar(self.tire_data, self.car_params['Fz_Fl'], 0.0, alpha_fl, 0.0, self.car_params['Vx'], 4)[1]
+        f_fr = self.car_params['mu'] * pacejka_62_scalar(self.tire_data, self.car_params['Fz_Fl'], 0.0, alpha_fr, 0.0, self.car_params['Vx'], 4)[1]
+        f_rl = self.car_params['mu'] * pacejka_62_scalar(self.tire_data, self.car_params['Fz_Rl'], 0.0, alpha_rl, 0.0, self.car_params['Vx'], 4)[1]
+        f_rr = self.car_params['mu'] * pacejka_62_scalar(self.tire_data, self.car_params['Fz_Rr'], 0.0, alpha_rr, 0.0, self.car_params['Vx'], 4)[1]
 
-        x1_dot = (self.car_params['Wf'] * (f_fl - f_fr) + self.car_params['Lf'] * (f_fl + f_fr) - self.car_params['Lr'] * (f_rl + f_rr)) / self.car_params['Iz']
-        x2_dot = (f_fl + f_fr + f_rl + f_rr) / self.car_params['m'] / self.car_params['Vx'] - x1
+        x1_dot = (((self.car_params['Wf'] * f_fl * jnp.sin(x3) - f_fr * jnp.sin(x3)) + self.car_params['Lf']
+                  * (f_fl * jnp.cos(x3) + f_fr * jnp.cos(x3)) - self.car_params['Lr'] * (f_rl + f_rr))/self.car_params['Iz'])
+        x2_dot = ((f_fl + f_fr) * jnp.cos(x3) + f_rl + f_rr) / self.car_params['m'] / self.car_params['Vx'] - x1
 
-        return jnp.array([x1_dot, x2_dot])
+        return jnp.array([x1_dot, x2_dot, 0.0])
 
     def control_jacobian(self, state, time):
         return jnp.array([[1/self.car_params['Iz']],
+                          [0],
                           [0]])
 
     def disturbance_jacobian(self, state, time):
         return jnp.array([[0],
+                          [0],
                           [0]])
